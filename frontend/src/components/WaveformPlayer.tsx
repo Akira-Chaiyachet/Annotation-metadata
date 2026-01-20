@@ -1,49 +1,132 @@
-import React, { useEffect, useRef } from 'react';
+import React, { useRef, useEffect, useState } from 'react';
 
-interface AudioPlayerProps {
-  audioPath: string;
+interface Props {
+  audioUrl: string;
   isPlaying: boolean;
-  onPlayChange: (playing: boolean) => void;
+  onPlayChange?: (isPlaying: boolean) => void;
+  progressColor?: string;
+  height?: string;
 }
 
-// ใช้ React.memo เพื่อให้ Render เฉพาะตอนจำเป็น (แก้เครื่องหน่วง)
-export const WaveformPlayer = React.memo<AudioPlayerProps>(({ audioPath, isPlaying, onPlayChange }) => {
-  const audioRef = useRef<HTMLAudioElement>(null);
+export const WaveformPlayer: React.FC<Props> = ({
+  audioUrl,
+  isPlaying,
+  onPlayChange,
+  progressColor = '#818cf8',
+  height = 'h-4'
+}) => {
+  const audioRef = useRef<HTMLAudioElement | null>(null);
+  const [currentTime, setCurrentTime] = useState(0);
+  const [duration, setDuration] = useState(0);
 
-  // Sync State: เมื่อ App บอกให้เล่น/หยุด -> สั่ง Audio Element
+  // --- Logic การดึง URL ที่ถูกต้อง (แก้ปัญหา URL ชนกัน) ---
+  const getCleanUrl = (url: string) => {
+    if (!url) return '';
+    // ถ้าเจอ blob: ซ้อนกัน หรือมี http นำหน้า ให้ดึงเฉพาะ blob: ตัวสุดท้าย
+    const match = url.match(/(blob:.*)/);
+    return match ? match[1] : url;
+  };
+
+  const cleanUrl = getCleanUrl(audioUrl);
+
   useEffect(() => {
-    const audio = audioRef.current;
-    if (!audio) return;
+    if (!cleanUrl) return; // ถ้าไม่มี URL ไม่ต้องทำอะไร
 
+    const audio = new Audio(cleanUrl);
+    audioRef.current = audio;
+
+    const updateTime = () => setCurrentTime(audio.currentTime);
+    const updateDuration = () => setDuration(audio.duration);
+    const handleEnded = () => {
+        onPlayChange?.(false);
+        setCurrentTime(0);
+    };
+    
+    // Error Handling
+    audio.addEventListener('error', (e) => {
+        console.error("Audio Load Error:", e);
+        onPlayChange?.(false); // หยุดสถานะเล่นถ้าไฟล์เสีย
+    });
+
+    audio.addEventListener('timeupdate', updateTime);
+    audio.addEventListener('loadedmetadata', updateDuration);
+    audio.addEventListener('ended', handleEnded);
+
+    return () => {
+      audio.pause();
+      audio.removeEventListener('timeupdate', updateTime);
+      audio.removeEventListener('loadedmetadata', updateDuration);
+      audio.removeEventListener('ended', handleEnded);
+      audio.removeEventListener('error', () => {});
+    };
+  }, [cleanUrl, onPlayChange]);
+
+  // Sync Play/Pause
+  useEffect(() => {
+    if (!audioRef.current || !cleanUrl) return; // เช็ค cleanUrl ด้วย
+    
     if (isPlaying) {
-      if (audio.paused) {
-        audio.play().catch(err => {
-            // ดัก Error กรณีเปลี่ยนเพลงเร็วเกินไป เพื่อไม่ให้จอแดง
-            console.warn("Audio play interrupted:", err); 
-        });
-      }
+        const playPromise = audioRef.current.play();
+        if (playPromise !== undefined) {
+            playPromise.catch(error => {
+                console.error("Play prevented or failed:", error);
+                onPlayChange?.(false); // Reset ปุ่ม Play ถ้าเล่นไม่ได้
+            });
+        }
     } else {
-      if (!audio.paused) {
-        audio.pause();
-      }
+        audioRef.current.pause();
     }
-  }, [isPlaying, audioPath]);
+  }, [isPlaying, cleanUrl]);
+
+  // ... (ส่วน Render Slider และ formatTime เหมือนเดิม) ...
+  const handleSeek = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const time = Number(e.target.value);
+    if (audioRef.current) {
+      audioRef.current.currentTime = time;
+      setCurrentTime(time);
+    }
+  };
+
+  const formatTime = (t: number) => {
+    if (!t || isNaN(t)) return "0:00";
+    const m = Math.floor(t / 60);
+    const s = Math.floor(t % 60);
+    return `${m}:${s.toString().padStart(2, '0')}`;
+  };
 
   return (
-    <div className="w-full bg-white rounded-xl border border-slate-200 shadow-sm p-2 flex items-center">
-      <audio
-        ref={audioRef}
-        src={audioPath}
-        controls
-        controlsList="nodownload" // ซ่อนปุ่มโหลดถ้าต้องการ
-        className="w-full h-10 accent-indigo-500" // ใช้ CSS ตกแต่งได้
-        onPlay={() => !isPlaying && onPlayChange(true)}
-        onPause={() => isPlaying && onPlayChange(false)}
-        onEnded={() => onPlayChange(false)}
-      />
+    <div className={`w-full flex items-center gap-3 px-2 select-none ${height === 'h-1.5' ? 'h-8' : height}`}>
+      <span className="text-[10px] font-mono text-slate-400 w-8 text-right tabular-nums">
+        {formatTime(currentTime)}
+      </span>
+      
+      <div className="relative flex-1 flex items-center h-4">
+        <input
+          type="range"
+          min="0"
+          max={duration || 100}
+          value={currentTime}
+          onChange={handleSeek}
+          className="absolute w-full h-1.5 bg-slate-200 rounded-lg appearance-none cursor-pointer focus:outline-none focus:ring-0"
+          style={{
+            backgroundImage: `linear-gradient(${progressColor}, ${progressColor})`,
+            backgroundSize: `${(currentTime / (duration || 1)) * 100}% 100%`,
+            backgroundRepeat: 'no-repeat'
+          }}
+        />
+        <style>{`
+          input[type="range"]::-webkit-slider-thumb {
+            -webkit-appearance: none; height: 12px; width: 12px; border-radius: 50%;
+            background: ${progressColor}; border: 2px solid white; box-shadow: 0 1px 3px rgba(0,0,0,0.15);
+            transition: transform 0.1s;
+          }
+          input[type="range"]::-webkit-slider-thumb:hover { transform: scale(1.2); }
+        `}</style>
+      </div>
+
+      <span className="text-[10px] font-mono text-slate-400 w-8 tabular-nums">
+        {formatTime(duration)}
+      </span>
     </div>
   );
-}, (prev, next) => {
-  // Logic ป้องกันการ Render ซ้ำ
-  return prev.audioPath === next.audioPath && prev.isPlaying === next.isPlaying;
-});
+};

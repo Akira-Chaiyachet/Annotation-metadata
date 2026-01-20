@@ -1,219 +1,201 @@
 import React, { useState } from 'react';
-import { Check, Download, Search, Scissors, Loader2 } from 'lucide-react';
+import { Check, Download, Play, Pause, Filter, AlertCircle, RotateCcw } from 'lucide-react';
 import { AudioItem } from '../types';
 import { Pagination } from '../components/Pagination';
 import { WaveformPlayer } from '../components/WaveformPlayer';
+import { TokenizedText } from '../components/TokenizedText';
+import './css/EditPage.css';
+// ไม่ต้องใช้ DownloadButton แบบ Component เพื่อความยืดหยุ่นในการจัด Layout กับปุ่ม Filter
 
-interface EditPageProps {
+interface Props {
   data: AudioItem[];
+  availableFiles: Set<string>;
   onSaveCorrection: (item: AudioItem, newText: string) => void;
   onDownload: (data: AudioItem[], filename: string) => void;
   playAudio: (item: AudioItem) => void;
   playingFile: string | null;
   onInspectText: (text: string) => Promise<string[]>;
+  edits: Record<string, string>;
+  setEdits: React.Dispatch<React.SetStateAction<Record<string, string>>>;
 }
 
-const ITEMS_PER_PAGE = 15;
+const ITEMS_PER_PAGE = 10;
 
-const EditPage: React.FC<EditPageProps> = ({
-  data, onSaveCorrection, onDownload, playAudio, playingFile, onInspectText
+const EditPage: React.FC<Props> = ({ 
+  data, 
+  availableFiles, 
+  onSaveCorrection, 
+  onDownload, 
+  playAudio, 
+  playingFile, 
+  onInspectText,
+  edits,
+  setEdits
 }) => {
-  const [currentPage, setCurrentPage] = useState<number>(1);
-  const [editingText, setEditingText] = useState<{ [key: string]: string }>({});
-  const [activeInputRef, setActiveInputRef] = useState<HTMLInputElement | null>(null);
-  
-  const [rowTokens, setRowTokens] = useState<{ [key: string]: string[] | null }>({});
-  const [loadingRows, setLoadingRows] = useState<{ [key: string]: boolean }>({});
+  const [page, setPage] = useState(1);
+  const [showAllHistory, setShowAllHistory] = useState(false); // 🟢 State สำหรับ Toggle Filter
 
-  const totalPages = Math.ceil(data.length / ITEMS_PER_PAGE);
-  const safePage = Math.min(currentPage, Math.max(1, totalPages));
-  const currentItems = data.slice((safePage - 1) * ITEMS_PER_PAGE, safePage * ITEMS_PER_PAGE);
+  // 🟢 Logic การกรอง (Features จาก Docker)
+  const displayData = showAllHistory 
+    ? data 
+    : data.filter(d => availableFiles.has(d.filename));
 
-  const handleTextChange = (filename: string, text: string) => {
-    setEditingText(prev => ({ ...prev, [filename]: text }));
-    setRowTokens(prev => {
-      const copy = { ...prev };
-      delete copy[filename];
-      return copy;
-    });
-  };
+  const items = displayData.slice((page - 1) * ITEMS_PER_PAGE, page * ITEMS_PER_PAGE);
 
-  const handleInspectRow = async (filename: string, text: string) => {
-    if (rowTokens[filename]) {
-      setRowTokens(prev => {
-        const copy = { ...prev };
-        delete copy[filename];
-        return copy;
-      });
-      return;
-    }
-
-    setLoadingRows(prev => ({ ...prev, [filename]: true }));
-    const tokens = await onInspectText(text);
-    setRowTokens(prev => ({ ...prev, [filename]: tokens }));
-    setLoadingRows(prev => {
-      const copy = { ...prev };
-      delete copy[filename];
-      return copy;
-    });
-  };
-
-  const handleSave = (item: AudioItem) => {
-    const newText = editingText[item.filename] ?? item.text;
-    onSaveCorrection(item, newText);
-    setEditingText(prev => { const c = {...prev}; delete c[item.filename]; return c; });
-    setRowTokens(prev => { const c = {...prev}; delete c[item.filename]; return c; });
-  };
-
-  const handleKeyDown = (e: React.KeyboardEvent<HTMLInputElement>, filename: string) => {
+  const handleKey = (e: React.KeyboardEvent<HTMLTextAreaElement>, fn: string, val: string) => {
     if (e.key === 'F2' || (e.ctrlKey && e.key === 'b')) {
       e.preventDefault();
       const input = e.currentTarget;
-      const start = input.selectionStart || 0;
+      const s = input.selectionStart || 0;
       const end = input.selectionEnd || 0;
-      const selectedText = input.value.substring(start, end);
-      
-      if (selectedText) {
-        const beforeSelection = input.value.substring(0, start);
-        const afterSelection = input.value.substring(end);
-        const newValue = `${beforeSelection}(${selectedText},)${afterSelection}`;
-        
-        setEditingText(prev => ({ ...prev, [filename]: newValue }));
-        setRowTokens(prev => {
-          const copy = { ...prev };
-          delete copy[filename];
-          return copy;
-        });
-        
-        setTimeout(() => {
-          input.value = newValue;
-          const newCursorPos = start + selectedText.length + 2; 
-          input.selectionStart = newCursorPos;
-          input.selectionEnd = newCursorPos;
-          input.focus();
+      const sel = val.substring(s, end);
+      if (sel) {
+        const newVal = val.substring(0, s) + `(${sel},)` + val.substring(end);
+        setEdits(prev => ({ ...prev, [fn]: newVal }));
+        setTimeout(() => { 
+            input.focus();
+            input.setSelectionRange(s + sel.length + 2, s + sel.length + 2); 
         }, 0);
       }
     }
   };
 
-  if (data.length === 0) {
-    return (
-      <div className="flex flex-col items-center justify-center h-64 text-slate-400">
-        <Search size={48} className="mb-4 opacity-20" />
-        <p>ไม่มีรายการที่ผิด</p>
-      </div>
-    );
-  }
-
   return (
     <div className="animate-fade-in">
-       <div className="flex justify-between items-center mb-6">
-        <h2 className="text-xl font-bold text-slate-700 flex items-center gap-2">
-          <span className="w-2 h-8 bg-rose-400 rounded-full"></span>
-          รายการที่ผิด ({data.length})
-        </h2>
-        <button onClick={() => onDownload(data, 'fail.tsv')} className="btn-primary" style={{ width: 'auto', padding: '0.5rem 1.5rem', backgroundColor: 'var(--danger-color)' }}>
-          <Download size={18} className="mr-2" /> Download fail.tsv
-        </button>
-      </div>
+      {/* --- Header Toolbar (ใช้แบบ Docker เพื่อให้มีปุ่ม Filter) --- */}
+      <div className="flex justify-between items-center mb-6 px-2">
+        <div className="flex items-center gap-3">
+          <h2 className="text-xl font-bold text-danger">Needs Correction</h2>
+          <span className="px-2 py-1 bg-danger-bg text-danger text-xs font-bold rounded-full">{displayData.length}</span>
+        </div>
+        
+        <div className="flex gap-3">
+           {/* 🟢 Toggle Filter Button Group */}
+           <div className="bg-slate-100 p-1 rounded-lg flex gap-1">
+              <button 
+                onClick={() => { setShowAllHistory(false); setPage(1); }}
+                className={`px-3 py-1.5 text-xs font-medium rounded-md transition-all flex items-center gap-2 ${!showAllHistory ? 'bg-white text-rose-600 shadow-sm' : 'text-slate-500 hover:text-slate-700'}`}
+              >
+                <Filter size={12} /> Local Audio Only
+              </button>
+              <button 
+                onClick={() => { setShowAllHistory(true); setPage(1); }}
+                className={`px-3 py-1.5 text-xs font-medium rounded-md transition-all ${showAllHistory ? 'bg-rose-500 text-white shadow-sm' : 'text-slate-500 hover:text-slate-700'}`}
+              >
+                Show All
+              </button>
+           </div>
 
-      <div className="card-content" style={{ borderColor: 'var(--danger-light)' }}>
-        <div style={{ overflowX: 'auto' }}>
-          <table className="data-table">
-            <thead>
-              <tr>
-                <th className="text-center w-16">#</th>
-                <th>ชื่อไฟล์</th>
-                <th className="text-center w-20">เสียง</th>
-                <th>แก้ไขข้อความ</th>
-                <th className="text-center w-32">บันทึก</th>
-              </tr>
-            </thead>
-            <tbody>
-              {currentItems.map((item, idx) => {
-                const globalIdx = (safePage - 1) * ITEMS_PER_PAGE + idx;
-                const isPlaying = playingFile === item.filename;
-                const val = editingText[item.filename] !== undefined ? editingText[item.filename] : item.text;
-                const tokens = rowTokens[item.filename];
-                const isLoading = loadingRows[item.filename];
-
-                return (
-                  <tr key={item.filename}>
-                    <td className="text-center text-slate-400 align-top pt-5">{globalIdx + 1}</td>
-                    <td className="text-mono text-sm align-top pt-5">{item.filename}</td>
-                    <td className="align-top pt-3" style={{ minWidth: '300px' }}>
-                      {/* ใช้ WaveformPlayer ทุกแถว */}
-                      {item.audioPath && (
-                        <WaveformPlayer 
-                          audioPath={`http://localhost:3001/api/audio/${encodeURIComponent(item.audioPath)}`}
-                          isPlaying={isPlaying}
-                          onPlayChange={(playing) => {
-                            if (playing) {
-                              if (!isPlaying) playAudio(item);
-                            } else {
-                              if (isPlaying) playAudio(item);
-                            }
-                          }}
-                        />
-                      )}
-                    </td>
-                    <td className="pt-3 pb-3">
-                      <div className="flex gap-2 mb-2">
-                        <input
-                          type="text"
-                          value={val}
-                          onChange={(e) => handleTextChange(item.filename, e.target.value)}
-                          onKeyDown={(e) => handleKeyDown(e, item.filename)}
-                          ref={(el) => setActiveInputRef(el)}
-                          className="input-cell"
-                          style={{ borderColor: 'var(--danger-light)' }}
-                          title="เลือกข้อความแล้วกด F2 เพื่อวงเล็บ"
-                        />
-                        <button
-                          onClick={() => handleInspectRow(item.filename, val)}
-                          className={`p-2 rounded-lg transition-colors border ${tokens ? 'bg-indigo-50 border-indigo-200 text-indigo-500' : 'bg-white border-slate-200 text-slate-400 hover:text-indigo-500 hover:border-indigo-200'}`}
-                          title="ดูการตัดคำ"
-                        >
-                          {isLoading ? <Loader2 size={18} className="animate-spin" /> : <Scissors size={18} />}
-                        </button>
-                      </div>
-                      
-                      {(tokens || isLoading) && (
-                        <div className="mt-3 animate-fade-in relative">
-                           <div className="absolute -top-2 left-6 w-4 h-4 bg-sky-50 border-t border-l border-sky-100 transform rotate-45 z-10"></div>
-                           <div className="bg-white rounded-xl p-4 border border-sky-100 shadow-sm relative z-0">
-                             {isLoading ? (
-                               <div className="flex items-center gap-2 text-sky-500 text-sm">
-                                 <Loader2 size={16} className="animate-spin" />
-                                 กำลังตัดคำ...
-                               </div>
-                             ) : (
-                               <div className="token-grid" style={{ marginTop: 0, padding: '0.5rem', backgroundColor: 'transparent', border: 'none' }}>
-                                 {tokens && tokens.map((t, i) => (
-                                   <div key={i} className="token-card" style={{ minWidth: 'auto', padding: '0.25rem 0.75rem' }}>
-                                     <span className="token-text" style={{ fontSize: '0.9rem' }}>{t}</span>
-                                     <span className="token-badge">{i + 1}</span>
-                                   </div>
-                                 ))}
-                               </div>
-                             )}
-                           </div>
-                        </div>
-                      )}
-                    </td>
-                    <td className="text-center align-top pt-4">
-                      <button onClick={() => handleSave(item)} className="btn-save"><Check size={16} /> บันทึก</button>
-                    </td>
-                  </tr>
-                );
-              })}
-            </tbody>
-          </table>
+           {/* ปุ่ม Download */}
+           <button onClick={() => onDownload(displayData, 'fail.tsv')} className="btn-icon w-auto px-4 gap-2 text-sm bg-danger text-white hover:bg-rose-600 shadow-none">
+             <Download size={16}/> Download TSV
+           </button>
         </div>
       </div>
-      <Pagination currentPage={safePage} totalPages={totalPages} onPageChange={setCurrentPage} />
+
+      <div className="minimal-card mb-8">
+        <table className="custom-table">
+          <thead>
+            <tr>
+              <th className="w-16 text-center">No.</th>
+              <th className="w-[30%]">Audio Source</th>
+              <th>Correction & Tokens</th>
+              <th className="w-20 text-center">Save</th>
+            </tr>
+          </thead>
+          <tbody>
+            {items.map((item, idx) => {
+              const val = edits[item.filename] ?? item.text;
+              const isModified = val !== item.text;
+              const isPlaying = playingFile === item.filename;
+              const hasAudio = availableFiles.has(item.filename); // เช็คไฟล์จริง
+
+              return (
+                <tr key={item.filename} className={`row-hover ${!hasAudio ? 'opacity-60 bg-slate-50/50' : ''}`}>
+                  <td className="text-center align-middle">
+                    <span className="text-xs font-mono text-slate-300">{(page-1)*ITEMS_PER_PAGE + idx + 1}</span>
+                  </td>
+                  <td className="align-top pt-4">
+                    <div className="flex flex-col gap-2">
+                       <div className="flex items-center justify-between">
+                          <div className="text-xs text-slate-500 font-medium truncate" title={item.filename}>
+                            {item.filename}
+                          </div>
+                          {hasAudio && (
+                            <button 
+                              onClick={() => playAudio(item)}
+                              className={`btn-icon w-8 h-8 text-danger hover:bg-rose-50 ${isPlaying ? 'bg-rose-50' : ''}`}
+                            >
+                              {isPlaying ? <Pause size={16} fill="currentColor" /> : <Play size={16} fill="currentColor" className="ml-0.5"/>}
+                            </button>
+                          )}
+                       </div>
+                       
+                       {/* Waveform Player: ใช้สีแดง (rose) สำหรับหน้า Fail */}
+                       {item.audioPath && hasAudio ? (
+                          <div className="bg-rose-50/30 rounded-lg p-2 border border-rose-100/50">
+                             <WaveformPlayer
+                               audioUrl={item.audioPath}
+                               isPlaying={isPlaying}
+                               onPlayChange={(p: boolean) => { if (p !== isPlaying) playAudio(item); }}
+                               progressColor="#f43f5e"
+                               height="h-3"
+                             />
+                          </div>
+                       ) : <span className="text-xs text-rose-300/50 italic flex items-center gap-1"><AlertCircle size={10}/> File not on disk</span>}
+                    </div>
+                  </td>
+                  <td className="align-top pt-4">
+                    <div className="mb-4">
+                      <label className="text-[10px] uppercase font-bold text-slate-400 mb-1 block tracking-wider">Edit Text</label>
+                      <div className="edit-wrapper">
+                        <textarea
+                          className="edit-textarea"
+                          value={val}
+                          onChange={e => setEdits(prev => ({...prev, [item.filename]: e.target.value}))}
+                          onKeyDown={e => handleKey(e, item.filename, val)}
+                          placeholder="Type correction here..."
+                          spellCheck={false}
+                        />
+                        <button 
+                          className={`btn-reset ${isModified ? 'visible' : ''}`}
+                          onClick={() => setEdits(prev => { const c={...prev}; delete c[item.filename]; return c; })}
+                          title="Reset to original"
+                          disabled={!isModified}
+                        >
+                          <RotateCcw size={14} />
+                        </button>
+                      </div>
+                    </div>
+                    
+                    <div>
+                          <label className="text-[10px] uppercase font-bold text-slate-400 mb-1 block tracking-wider"></label>
+                          <TokenizedText 
+                            text={val} 
+                            onInspect={onInspectText} 
+                            isExpanded={false}
+                          />
+                    </div>
+                  </td>
+                  <td className="text-center align-middle">
+                    <button 
+                      onClick={() => onSaveCorrection(item, val)} 
+                      className="btn-icon bg-indigo-50 text-indigo-600 hover:bg-indigo-500 hover:text-white w-10 h-10 shadow-sm hover:shadow-md"
+                      title="Save Correction"
+                    >
+                      <Check size={20} strokeWidth={2.5}/>
+                    </button>
+                  </td>
+                </tr>
+              );
+            })}
+          </tbody>
+        </table>
+      </div>
+      <div className="flex justify-center pb-10">
+        <Pagination currentPage={page} totalPages={Math.ceil(displayData.length/ITEMS_PER_PAGE)} onPageChange={setPage} />
+      </div>
     </div>
   );
 };
-
 export default EditPage;

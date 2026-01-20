@@ -1,0 +1,53 @@
+# Audio Annotation Tool 🎧
+
+เครื่องมือสำหรับตรวจสอบ (Verify), แก้ไข (Edit), และจัดการข้อมูลคู่เสียงและข้อความ (Audio-Text Pairs) สำหรับงาน Speech Recognition หรือ TTS มาพร้อมกับหน้าตา UI แบบ **Minimalist Pastel** ที่ดูสะอาดและสบายตา
+
+## ✨ ฟีเจอร์หลัก (Features)
+
+* **Clean UI:** ดีไซน์ใหม่ สไตล์มินิมอล สีพาสเทล แยกหมวดหมู่ด้วยสีชัดเจน
+    * 🟣 **Pending:** รายการที่รอตรวจสอบ
+    * 🟢 **Correct:** รายการที่ถูกต้อง
+    * 🔴 **Fail:** รายการที่มีปัญหาหรือใช้ไม่ได้
+* **Audio Player:** ตัวเล่นเสียงพร้อม Waveform ควบคุมง่าย
+* **Tokenization Support:** ระบบตัดคำภาษาไทย (Word Tokenization) แบบ Real-time ด้วย **Native Node.js Engine** (เร็วและไม่ต้องลง Python เพิ่ม) แสดงผลแบบการ์ดเรียงสวยงาม
+* **Keyboard Shortcuts:** รองรับการทำงานด้วยคีย์บอร์ดเพื่อความรวดเร็ว
+    * `Enter`: ยืนยันว่าถูกต้อง (Move to Correct)
+    * `Backspace`/`Delete`: ระบุว่าผิด (Move to Fail)
+* **Data Management:**
+    * โหลดไฟล์ Metadata (TSV) และสแกนไฟล์เสียงจาก Folder อัตโนมัติ
+    * บันทึกไฟล์ `Correct.tsv` และ `fail.tsv` แยกกันให้อัตโนมัติ
+    * บันทึกประวัติการแก้ไขคำผิดลง `ListOfChange.tsv` เพื่อนำไปวิเคราะห์ต่อได้
+
+---
+
+## 🛠️ Tech Stack
+
+* **Frontend:** React 19, TypeScript, CSS (Custom Styling), Lucide React (Icons)
+* **Backend:** Node.js, Express, TypeScript
+* **NLP Engine:** Node.js Native (`Intl.Segmenter`) - *ไม่ต้องติดตั้ง Python*
+
+---
+
+## ⚙️ การติดตั้งและใช้งาน (Installation)
+
+โปรเจกต์นี้ต้องรันทั้ง **Frontend** และ **Backend** ควบคู่กัน
+
+### 1. สิ่งที่ต้องมี (Prerequisites)
+
+ต้องมี **Node.js** (แนะนำเวอร์ชัน 18 LTS ขึ้นไป)
+
+#### 🪟 สำหรับ Windows
+1.  ดาวน์โหลดตัวติดตั้ง `.msi` จากเว็บ [Node.js](https://nodejs.org/)
+2.  หรือติดตั้งผ่าน Command Prompt (winget):
+    ```powershell
+    winget install OpenJS.NodeJS.LTS
+    ```
+
+#### 🍎 สำหรับ macOS
+แนะนำให้ติดตั้งผ่าน **Homebrew**:
+```bash
+# ถ้ายังไม่มี Homebrew
+/bin/bash -c "$(curl -fsSL [https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh](https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh))"
+
+# ติดตั้ง Node.js
+brew install node
